@@ -18,9 +18,9 @@
 //CUFFT Header file
 #include <cufftXt.h>
 
-#define NX 64
-#define NY 64
-#define NZ 64
+#define NX 512
+#define NY 512
+#define NZ 512
 #define NZ2 (NZ/2+1)
 #define NN (NX*NY*NZ)
 #define L (2*M_PI)
@@ -104,6 +104,8 @@ int main (void)
             2.0*prop.memoryClockRate*(prop.memoryBusWidth/8)/1.0e6);
     }
 
+    printf("Running Multi_GPU_FFT_check using %d GPUs on a %dx%dx%d grid.\n",nGPUs,NX,NY,NZ);
+
     // Initialize input data
     // Split data according to number of GPUs
     NX_per_GPU = NX/nGPUs;              // This is not a good solution long-term; needs more work for arbitrary grid sizes/nGPUs
@@ -141,15 +143,17 @@ int main (void)
 
     // Tell cuFFT which GPUs to use
     result = cufftXtSetGPUs (plan, nGPUs, deviceNum);
-    if (result != CUFFT_SUCCESS) { printf ("*XtSetGPUs failed\n"); return 1; }
+    if (result != CUFFT_SUCCESS) { printf ("*XtSetGPUs failed: code %i\n", result); return 1; }
 
     // Create the plan for the FFT
-    size_t* worksize;                                   // Initializes the worksize variable
+    size_t *worksize;                                   // Initializes the worksize variable
     worksize =(size_t*)malloc(sizeof(size_t) * nGPUs);  // Allocates memory for the worksize variable, which tells cufft how many GPUs it has to work with
-
+    
     // Create the plan for cufft
     result = cufftMakePlan3d(plan, NX, NY, NZ, CUFFT_Z2Z, worksize);
     if (result != CUFFT_SUCCESS) { printf ("*MakePlan* failed: code %d \n",(int)result); exit (EXIT_FAILURE) ; }
+
+    printf("The size of the worksize is %lu\n", worksize[0]);
 
     // Initialize transform array - to be split among GPU's and transformed in place using cufftX
     cudaLibXtDesc *u_prime;
@@ -178,7 +182,7 @@ int main (void)
 
     // Perform inverse FFT on multiple GPUs
     printf("Inverse 3d FFT on multiple GPUs\n");
-    result = cufftXtExecDescriptorZ2Z(plan, u_prime,  u_prime, CUFFT_INVERSE);
+    result = cufftXtExecDescriptorZ2Z(plan, u_prime, u_prime, CUFFT_INVERSE);
     if (result != CUFFT_SUCCESS) { printf ("*XtExecZ2Z  failed\n"); exit (EXIT_FAILURE); }
 
     // Copy the output data from multiple gpus to the 'host' result variable (automatically reorders the data from output to natural order)
@@ -212,7 +216,7 @@ int main (void)
             }
         }
     }
-    printf("The sum of the errorx10^-7 is %f\n",error*10000000);
+    printf("The sum of the error is %4.4g\n",error);
 
     // Deallocate variables
 
